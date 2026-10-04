@@ -739,9 +739,12 @@ if (typeof module !== "undefined") module.exports = ART;
     DPR = Math.min(2, window.devicePixelRatio || 1);
     cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
     var cs = getComputedStyle($("safe")), st = parseFloat(cs.paddingTop) || 0, sb = parseFloat(cs.paddingBottom) || 0;
+    sprites = {}; bgCache = null; backCache = null; frontCache = null;
+    // hosts often load the game in a hidden or zero-size frame: wait for a real size before laying out
+    if (W < 80 || H < 80) { L = { bad: true, side: false, s: 0.1, ox: 0, oy: 0, deckY: H }; return; }
     var l = { side: false };
     if (W / H > 1.05) {
-      var s1 = Math.min((H - 20 - st - sb) / EXT_H, W * 0.5 / EXT_W), panel = (W - EXT_W * s1) / 2;
+      var s1 = Math.max(0.05, Math.min((H - 20 - st - sb) / EXT_H, W * 0.5 / EXT_W)), panel = (W - EXT_W * s1) / 2;
       if (panel >= 170) {
         l.side = true; l.s = s1;
         l.ox = (W - TW * s1) / 2; l.oy = st + (H - st - sb - EXT_H * s1) / 2 - TOPU * s1;
@@ -756,7 +759,7 @@ if (typeof module !== "undefined") module.exports = ART;
     }
     if (!l.side) {
       var hud = 92 + st, strip = 52, foot = 10 + sb;
-      var s2 = Math.min((W - 16) / EXT_W, (H - hud - strip - foot) / EXT_H);
+      var s2 = Math.max(0.05, Math.min((W - 16) / EXT_W, (H - hud - strip - foot) / EXT_H));
       l.s = s2; l.ox = (W - TW * s2) / 2;
       var free = H - hud - strip - foot - EXT_H * s2;
       l.oy = hud + Math.max(0, free * 0.45) - TOPU * s2;
@@ -770,7 +773,6 @@ if (typeof module !== "undefined") module.exports = ART;
     var sbx = $("scoreBox").style;
     if (l.side) { sbx.left = l.scoreX + "px"; sbx.top = (l.scoreY - 40) + "px"; $("app").classList.add("side"); }
     else { sbx.left = "50%"; sbx.top = ""; $("app").classList.remove("side"); }
-    sprites = {}; bgCache = null; backCache = null; frontCache = null;
   }
   function ux(x) { return L.ox + x * L.s; }
   function uy(y) { return L.oy + y * L.s; }
@@ -1430,6 +1432,7 @@ if (typeof module !== "undefined") module.exports = ART;
   /* ===================== Loop ===================== */
   var last = 0;
   function frame(ts) {
+    requestAnimationFrame(frame); // first, so one bad frame can never stop the game
     var t = ts / 1000, dt = last ? Math.min(0.05, t - last) : 0.016; last = t;
     if (!paused) clock += dt;
     var g = G.g;
@@ -1439,7 +1442,7 @@ if (typeof module !== "undefined") module.exports = ART;
       G.target = clamp(G.target, curR(), TW - curR());
       G.clawX += (G.target - G.clawX) * (1 - Math.exp(-dt * 22));
       var hy = WL - 2 * curR() - 9; G.hubY = G.hubY === undefined ? hy : G.hubY + (hy - G.hubY) * (1 - Math.exp(-dt * 18));
-      var running = !paused && G.state === "play" && $("modal").hidden && !G.hold;
+      var running = !paused && G.state === "play" && $("modal").hidden && !G.hold && !L.bad;
       if (running) {
         G.acc = Math.min(G.acc + dt, 0.2);
         while (G.acc >= STEP) { tick(); G.acc -= STEP; if (G.state !== "play") break; }
@@ -1453,10 +1456,11 @@ if (typeof module !== "undefined") module.exports = ART;
       if (G.disp < g.score) { G.disp = Math.min(g.score, G.disp + Math.max(1, (g.score - G.disp) * dt * 8)); $("score").textContent = fmt(G.disp); $("bestN").textContent = fmt(Math.max(S.best, Math.floor(G.disp))); }
       if (G.state === "ending" && clock >= G.overAt) finishGame();
       G.shake = Math.max(0, G.shake - dt * 2.5);
-      draw(dt);
-      positionHint(clock);
+      if (!L.bad) {
+        try { draw(dt); positionHint(clock); }
+        catch (e) { if (!frame.failed) { frame.failed = true; try { console.error(e); } catch (e2) {} } }
+      }
     }
-    requestAnimationFrame(frame);
   }
 
   /* ===================== Visibility / resize ===================== */
